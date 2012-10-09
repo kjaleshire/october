@@ -1,0 +1,19 @@
+Project October
+
+A (very) simple threaded HTTP daemon mainly for self-educational purposes.
+
+Only supports GET requests. A request is serviced FIFO by a newly-spawned thread which then exits on completion.
+
+See TODO file for a list of planned modifications.
+
+Build:
+
+$ cc -o october october.c
+$ sudo ./october
+
+(yeah, I know that means it runs as root, but that's the only way to bind an unprivileged program to a port <1024 in OS X)
+
+(c) 2012 Kyle Aleshire
+All rights reserved.
+
+Licensed under BSD 2-clause license

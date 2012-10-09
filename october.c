@@ -1,12 +1,20 @@
 /*
-Threaded HTTP server. Read GET replies from a host and respond appropriately.
+Simple threaded HTTP server. Read GET replies from a host and respond appropriately.
 
-Licensed under BSD two-clause license.
-
-This program is provided as free open-source software without warranty or guarantee
-as permitted by law.
+Main program file
 
 (c) 2012 Kyle J Aleshire
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "october.h"
@@ -27,7 +35,7 @@ int main(int argc, char *argv[]){
 	struct sockaddr_in servaddr;
 	struct sockaddr_in* conn_info;
 	pthread_t thread_id;
-	socklen_t length;
+	socklen_t sockaddr_in_size;
 	threadargs_t* t_args;
 
 	log_level = 4;
@@ -76,26 +84,36 @@ int main(int argc, char *argv[]){
 		october_log(LOGINFO, "socket set to listen on port %d", PORT);
 	}
 
+	/* save the size of the sockaddr structure since we're going to use it a lot */
+	sockaddr_in_size = (socklen_t) sizeof(struct sockaddr_in);
+
+	/* enter our socket listen loop */
 	for(;;) {
-		length = (socklen_t) sizeof(struct sockaddr_in);
+		/* 
 		conn_info = malloc(sizeof(*conn_info));
 		memset(conn_info, 0, sizeof(*conn_info));
-		if( (conn_fd = accept(listen_fd, (struct sockaddr *) conn_info, &length)) < 0) {
+
+		/* at the call to accept(), the main thread blocks until a client connects */
+		if( (conn_fd = accept(listen_fd, (struct sockaddr *) conn_info, &sockaddr_in_size)) < 0) {
 			october_panic(ERRSYS, "connection accept failure from client %s", inet_ntoa(conn_info->sin_addr));
 		} else {
 			october_log(LOGINFO, "accepted connection from client %s", inet_ntoa(conn_info->sin_addr));
 		}
 
+		/* make sure terminal output is flushed since we're dealing with different output descriptors */
 		fflush(stdout);
 
+		/* set up our thread argument structure. we need to pass the new connection descriptor and client address structure */
 		t_args = malloc(sizeof((*t_args)));
 		t_args->conn_fd = conn_fd;
 		t_args->conn_info = conn_info;
 
+		/* spawn a new thread to handle the accept()'ed connection */
 		if( (pthread_create(&thread_id, NULL, (void *(*)(void *)) october_worker_thread, t_args)) < 0) {
 			october_panic(ERRSYS, "spawn connection thread failed with ID %d and address %s", thread_id, inet_ntoa(conn_info->sin_addr));
 		}
 
+		/* we don't care what the thread does after we spawn it; detach so we're not leaking memory when it stops */
 		if( pthread_detach(thread_id) < 0) {
 			october_panic(ERRSYS, "thread ID %d failed to detach", thread_id);
 		} else {
@@ -104,6 +122,7 @@ int main(int argc, char *argv[]){
 	}
 }
 
+/* worker thread main thread; to be called when spawned */
 void october_worker_thread(threadargs_t *t_args) {
 	int v; /* for miscellaneous values, only used very locally (usually in if(function()) idioms) */
 	int buff_index;
@@ -150,7 +169,7 @@ void october_worker_thread(threadargs_t *t_args) {
 	/* detect what kind of request this is, starting with GET. */
 	october_log(LOGDEBUG, "request string NULL terminated. buff_index %d", buff_index);
 	if( strcmp(GET, request) == 0 ){
-		october_log(LOGDEBUG, "received GET request of length %d", strlen(request));
+		october_log(LOGDEBUG, "received GET request of sockaddr_in_size %d", strlen(request));
 		/* fast foward through any spaces */
 		while(buff[buff_index] == ' ') {
 			buff_index++;
@@ -163,7 +182,7 @@ void october_worker_thread(threadargs_t *t_args) {
 		pthread_cleanup_push( (void (*) (void *)) october_worker_get_handler_cleanup, filename);
 		october_log(LOGDEBUG, "reading filename from read buffer into filename buffer. read index %d", buff_index);
 
-		/* read the next token, should be the filename, into the filename buffer */
+		/* read the next token (should be the filename) into the filename buffer */
 		alt_index = 0;
 		while( (c = buff[buff_index]) != ' ' &&
 			 					  c != '\n' &&
@@ -262,10 +281,10 @@ void october_worker_get_handler_cleanup(char* filename) {
 	free(filename);
 }
 
-void october_file_write(int fd, char* buff, int buff_length) {
+void october_file_write(int fd, char* buff, int buff_sockaddr_in_size) {
 	october_log(LOGDEBUG, "fd write function called");
 	int v;
-	if( (v = write(fd, buff, buff_length)) < 0) {
+	if( (v = write(fd, buff, buff_sockaddr_in_size)) < 0) {
 		october_worker_panic(ERRSYS, "connection write error");
 	} else {
 		october_log(LOGDEBUG, "wrote %d bytes on connection socket: %s", v, buff);
