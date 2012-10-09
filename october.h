@@ -45,8 +45,8 @@
 #define PUT "PUT"
 
 /* response types */
-#define OK "HTTP/1.1 200 OK\n"
-#define NOTFOUND "HTTP/1.1 404 Not Found\n"
+#define OK "HTTP/1.1 200 OK"
+#define NOTFOUND "HTTP/1.1 404 Not Found"
 
 /* message end */
 #define CRLF "\r\n"
