@@ -1,4 +1,5 @@
 /*
+
 Simple threaded HTTP server. Read GET replies from a host and respond appropriately.
 
 Main header file
@@ -15,6 +16,7 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 */
 
 #ifndef __october_h
@@ -63,11 +65,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HEAD "HEAD"
 #define PUT "PUT"
 
-/* response types */
-#define OK "HTTP/1.1 200 OK"
-#define NOTFOUND "HTTP/1.1 404 Not Found"
+/* response types. HTTP 1.0 since we're not supporting a lot of HTTP 1.0 (specifically Connection: keep-alive) */
+#define OK "HTTP/1.0 200 OK\n"
+#define NOTFOUND "HTTP/1.0 404 Not Found\n"
 
-/* message end */
+/* message end. carriage return + line feed */
 #define CRLF "\r\n"
 
 /* default filename */
@@ -93,4 +95,4 @@ void october_worker_panic(int error, const char* message, ...);
 void october_panic(int error, const char* message, ...);
 void october_log(int err_level, const char* message, ...);
 
-#endif
+#endif /* __october_h */

@@ -1,4 +1,5 @@
 /*
+
 Simple threaded HTTP server. Read GET replies from a host and respond appropriately.
 
 Main program file
@@ -15,6 +16,7 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 */
 
 #include "october.h"
@@ -89,7 +91,7 @@ int main(int argc, char *argv[]){
 
 	/* enter our socket listen loop */
 	for(;;) {
-		/* 
+		/* allocate and zero out client address structure */
 		conn_info = malloc(sizeof(*conn_info));
 		memset(conn_info, 0, sizeof(*conn_info));
 
@@ -167,10 +169,10 @@ void october_worker_thread(threadargs_t *t_args) {
 	} request[buff_index] = '\0';
 
 	/* detect what kind of request this is, starting with GET. */
-	october_log(LOGDEBUG, "request string NULL terminated. buff_index %d", buff_index);
+	october_log(LOGDEBUG, "request string NULL terminated");
 	if( strcmp(GET, request) == 0 ){
 		october_log(LOGDEBUG, "received GET request of sockaddr_in_size %d", strlen(request));
-		/* fast foward through any spaces */
+		/* fast foward through any extra spaces */
 		while(buff[buff_index] == ' ') {
 			buff_index++;
 		}
@@ -180,7 +182,7 @@ void october_worker_thread(threadargs_t *t_args) {
 
 		/* register the cleanup function to be called if this thread perishes */
 		pthread_cleanup_push( (void (*) (void *)) october_worker_get_handler_cleanup, filename);
-		october_log(LOGDEBUG, "reading filename from read buffer into filename buffer. read index %d", buff_index);
+		october_log(LOGDEBUG, "reading filename from read buffer into filename buffer", buff_index);
 
 		/* read the next token (should be the filename) into the filename buffer */
 		alt_index = 0;
@@ -201,6 +203,7 @@ void october_worker_thread(threadargs_t *t_args) {
 		/* we've returned from the GET request handler, execute the registered cleanup function */
 		pthread_cleanup_pop(1);	
 
+		/* make sure this isn't a different kind of request, or malformed request. */
 	} else if ( ( strcmp(HEAD, request) == 0 ) ||
 				( strcmp(OPTIONS, request) == 0 ) ||
 				( strcmp(POST, request) == 0 ) ||
@@ -214,6 +217,7 @@ void october_worker_thread(threadargs_t *t_args) {
 	pthread_exit(NULL);
 }
 
+/* function called when GET request is received */
 void october_worker_get_handler(int conn_fd, char* filename) {
 	int v;
 	char buff[MAXLINE];
@@ -223,6 +227,7 @@ void october_worker_get_handler(int conn_fd, char* filename) {
 
 	october_log(LOGDEBUG, "GET worker function called");
 
+	/* if the filename ends with '/', assume they're asking for the default file and append our default filename */
 	if( strcmp(&filename[strlen(filename) - 1], "/") == 0 && strlen(filename) + strlen(DEFAULTFILE) + 1 < FILENAME) {
 		buff[0] = '.';
 		strcat(&buff[1], filename);
@@ -230,11 +235,11 @@ void october_worker_get_handler(int conn_fd, char* filename) {
 		strcat(filename, DEFAULTFILE);
 	}
 
+
 	october_log(LOGDEBUG, "detecting if file exists: %s", filename);
 	if( stat(filename, NULL) < 0 && errno == ENOENT ) {
-
-		october_file_write(conn_fd, NOTFOUND, strlen(NOTFOUND));
 		october_log(LOGDEBUG, "file not found: %s", filename);
+		october_file_write(conn_fd, NOTFOUND, strlen(NOTFOUND));
 	} else {
 		october_log(LOGDEBUG, "file found: %s", filename);
 
