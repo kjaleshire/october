@@ -1,9 +1,10 @@
 Stuff yet TODO (in no particular order):
 
-* implement command line flags so we can pass in options.
+* implement proper HTTP header support, sending and detecting
+* implement command line flags so we can pass in options
 * support for config file to put options like document root, listen address/port, log leve & destination
-* reuse threads for new requests. perhaps spawn set number of worker threads and pass off connections so we're not wasting time setting up
+* reuse threads for new requests (related to Connection: keep-alive). perhaps spawn set number of worker threads and pass off connections so we're not wasting time setting up
 * support connection: keep-alive. right now connections close when response has finished sending
-* support MIME types. right now when we service a request we just respond 200 and then the content, no other preamble. browsers are okay with this normally, but we want to be good citizens anyway.
+* support MIME types. right now when we service a request we just respond 200 and then the content, no other preamble. browsers are okay with this normally, but we want to be good citizens anyway
 * look into using libdispatch instead of threads to pass connections off to. libdispatch queues are much more lightweight than threads, however this would limit portability. idea: detect platform and use appropriate solution. or maybe we don't care since we're only running this on a Mac anyway :)
 * 
