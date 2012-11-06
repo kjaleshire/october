@@ -41,16 +41,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <time.h>
 
-#define BUFFSIZE 8192
-#define MAXLINE 4896
+#define BUFFSIZE 1024
 #define LISTENQ 1024
 #define FILENAME 1024
-#define REQUEST 8
 #define TIME 32
 
 /* error types */
 #define ERRPROG -1
 #define ERRSYS -2
+#define THREADERRPROG -10
+#define THREADERRSYS -20
 
 /* logging levels */
 #define LOGNONE 0
@@ -81,18 +81,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 typedef struct threadargs {
 	int conn_fd;
-	struct sockaddr_in* conn_info;
+	struct sockaddr_in conn_info;
+	char readbuff[BUFFSIZE];
+	char writebuff[BUFFSIZE];
+	int readindex;
+	int writeindex;
 } threadargs_t;
 
 int log_level;
 FILE* log_fd;
 
 void october_worker_thread(threadargs_t* t_args);
-void october_worker_get_handler(int conn_fd, char* filename);
-void october_file_write(int fd, char* buff, int buff_length);
-void october_worker_conn_cleanup(threadargs_t* t_args);
-void october_worker_get_handler_cleanup(char* filename);
-void october_worker_panic(int error, const char* message, ...);
+//void october_worker_get_handler(int conn_fd, char* filename);
+//void october_file_write(int fd, char* buff, int buff_length);
+void october_worker_cleanup(threadargs_t* t_args);
+//void october_worker_get_handler_cleanup(char* filename);
 void october_panic(int error, const char* message, ...);
 void october_log(int err_level, const char* message, ...);
 
