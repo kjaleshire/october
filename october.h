@@ -35,16 +35,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <unistd.h>
 #include <sys/un.h>
-#import <pthread.h>
-#import <errno.h>
-#import <fcntl.h>
-
+#include <pthread.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <assert.h>
 #include <time.h>
 
 #define BUFFSIZE 1024
 #define LISTENQ 1024
-#define FILENAME 1024
 #define TIME 32
+#define DOCROOT "site"
 
 /* error types */
 #define ERRPROG -1
@@ -69,15 +69,43 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /* response types. HTTP 1.0 since we're not supporting a lot of HTTP 1.0 (specifically Connection: keep-alive) */
 #define OK "HTTP/1.0 200 OK\n"
 #define NOTFOUND "HTTP/1.0 404 Not Found\n"
-
-/* message end. carriage return + line feed */
-#define CRLF "\r\n"
+#define NOTFOUNDHTML "<html><body><p>Document not found, error 404</p></body></html>"
 
 /* default filename */
 #define DEFAULTFILE "index.html"
 
-/* Date header */
-#define DATE "Date: "
+/* headers */
+#define DATE_H "Date: "
+#define CONTENT_T_H "Content-Type: "
+
+/* connection method flags */
+#define GET_F	0x00000001
+#define HEAD_F	0x00000002
+
+/* HTTP header flags per connection */
+#define CONNECTION_F	0x00000100
+#define CONTENTTYPE_F	0x00000200
+
+/* special flags */
+#define HTTPVERSION_F 	0x01000000
+#define FILENAME_F		0x02000000
+#define HOSTHEADER_F	0x04000000
+#define DATEHEADER_F	0x08000000
+
+/* MIME types */
+#define MIME_HTML "text/html; "
+#define MIME_JPG "image/jpeg; "
+#define MIME_GIF "image/gif; "
+#define MIME_PNG "image/png; "
+#define MIME_CSS "text/css; "
+#define MIME_JS "application/javascript; "
+#define MIME_TXT "text/plain; "
+
+/* character set */
+#define CHARSET "charset=utf-8\n"
+
+/* temporary headers until we implement the proper handlers */
+#define CONNECTION_H "Connection: close"
 
 typedef struct threadargs {
 	int conn_fd;
@@ -88,14 +116,21 @@ typedef struct threadargs {
 	int writeindex;
 } threadargs_t;
 
+typedef struct reqargs {
+	uint32_t conn_flags;
+	char* method;
+	char* file;
+	char scratchbuff[BUFFSIZE];
+	char* http_ver;
+	char* mimetype;
+} reqargs_t;
+
 int log_level;
 FILE* log_fd;
 
 void october_worker_thread(threadargs_t* t_args);
-//void october_worker_get_handler(int conn_fd, char* filename);
-//void october_file_write(int fd, char* buff, int buff_length);
+char* october_detect_type(char*);
 void october_worker_cleanup(threadargs_t* t_args);
-//void october_worker_get_handler_cleanup(char* filename);
 void october_panic(int error, const char* message, ...);
 void october_log(int err_level, const char* message, ...);
 

@@ -11,7 +11,7 @@ Build:
 $ cc -o october october.c
 $ sudo ./october
 
-(yeah, I know that means it runs as root, but that's the only way to bind an unprivileged program to a port <1024 in OS X)
+(yeah, I know that means it runs as root, but that's the only way to bind a UNIX C program to a port <1024 in OS X)
 
 (c) 2012 Kyle J Aleshire
 All rights reserved
