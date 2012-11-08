@@ -127,7 +127,7 @@ void october_worker_thread(threadargs_t *t_args) {
 	char *token, *linetoken;
 	time_t ticks;
 
-	october_log(LOGINFO, "spawned new thread with ID %d to handle connection from %s", pthread_self(),  inet_ntoa(t_args->conn_info.sin_addr));
+	october_log(LOGINFO, "spawned to handle %s",  inet_ntoa(t_args->conn_info.sin_addr));
 
 	pthread_cleanup_push( (void (*) (void *)) october_worker_cleanup, t_args);
 
@@ -163,8 +163,7 @@ void october_worker_thread(threadargs_t *t_args) {
 
 	/* test for GET request and handle appropriately */
 	if( strcmp(GET, request.method) == 0){
-		request.conn_flags |= GET_F;
-
+ 
 		if( (request.file = strsep(&token, " ")) == NULL) {
 			october_panic(THREADERRPROG, "no filename received");
 		} else {
@@ -203,10 +202,12 @@ void october_worker_thread(threadargs_t *t_args) {
 		october_log(LOGDEBUG, "detecting if file exists: %s", t_args->writebuff);
 		if( stat(t_args->writebuff, NULL) < 0 && errno == ENOENT ) {
 			october_log(LOGINFO, "404 file not found: %s", t_args->writebuff);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s", NOTFOUND);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s", CONTENT_T_H, MIME_HTML, CHARSET);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", DATE_H, ctime(&ticks));
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUND, "\r\0");
+
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", NOTFOUND);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s\n", CONTENT_T_H, MIME_HTML, CHARSET);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s\n", DATE_H, ctime(&ticks));
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", NOTFOUNDHTML);
+
 			assert(t_args->writeindex <= BUFFSIZE);
 		} else {
 			october_log(LOGINFO, "200 OK file found: %s", t_args->writebuff);
@@ -216,9 +217,12 @@ void october_worker_thread(threadargs_t *t_args) {
 				october_log(LOGDEBUG, "file opened: %s", t_args->writebuff);
 			}
 			request.mimetype = october_detect_type(t_args->writebuff);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s", OK);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s", CONTENT_T_H, request.mimetype, CHARSET);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%.24s%s", DATE_H, ctime(&ticks), "\n\n");
+
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", OK);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s\n", CONTENT_T_H, request.mimetype, CHARSET);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%.24s\n", DATE_H, ctime(&ticks));
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n%s\n\n", EXPIRES_H, SERVER_H);
+
 			assert(t_args->writeindex <= BUFFSIZE);
 
 			while( (v = read(file_fd, &(t_args->writebuff[t_args->writeindex]), BUFFSIZE - t_args->writeindex)) != 0 ) {
@@ -263,7 +267,7 @@ void october_worker_thread(threadargs_t *t_args) {
 
 char* october_detect_type(char* filename) {
 	char *c;
-	if( (c = strrchr(filename, '.')) == NULL ) {
+	if( (c = strrchr(filename, '.')) == NULL || strcmp(c, ".txt") == 0 ) {
 		return MIME_TXT;
 	} else if( strcmp(c, ".html") == 0 || strcmp(c, ".htm") == 0) {
 		return MIME_HTML;
@@ -277,8 +281,6 @@ char* october_detect_type(char* filename) {
 		return MIME_CSS;
 	} else if( strcmp(c, ".js") == 0 ) {
 		return MIME_JS;
-	} else if( strcmp(c, ".txt") == 0 ) {
-		return MIME_TXT;
 	} else {
 		return MIME_TXT;
 	}
@@ -326,10 +328,12 @@ void october_panic(int error, const char* message, ...) {
 /* log stuff */
 void october_log(int err_level, const char* message, ...) {
 	if(err_level <= log_level) {
+		char buff[BUFFSIZE];
+		snprintf(buff, BUFFSIZE, "%u:\t", (unsigned int) pthread_self());
 		va_list arglist;
 		va_start(arglist, message);
-		vfprintf(log_fd, message, arglist);
-		printf("\n");
+		vsprintf(&(buff[strlen(buff)]), message, arglist);
 		va_end(arglist);
+		printf("%s\n", buff);
 	}
 }

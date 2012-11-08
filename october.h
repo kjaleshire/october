@@ -43,7 +43,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define BUFFSIZE 1024
 #define LISTENQ 1024
-#define TIME 32
 #define DOCROOT "site"
 
 /* error types */
@@ -66,9 +65,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HEAD "HEAD"
 #define PUT "PUT"
 
-/* response types. HTTP 1.0 since we're not supporting a lot of HTTP 1.0 (specifically Connection: keep-alive) */
-#define OK "HTTP/1.0 200 OK\n"
-#define NOTFOUND "HTTP/1.0 404 Not Found\n"
+/* response types. HTTP 1.0 since we're not (yet) supporting a lot of HTTP 1.0 (specifically Connection: keep-alive) */
+#define OK "HTTP/1.0 200 OK"
+#define NOTFOUND "HTTP/1.0 404 Not Found"
 #define NOTFOUNDHTML "<html><body><p>Document not found, error 404</p></body></html>"
 
 /* default filename */
@@ -77,13 +76,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /* headers */
 #define DATE_H "Date: "
 #define CONTENT_T_H "Content-Type: "
-
-/* connection method flags */
-#define GET_F	0x00000001
-#define HEAD_F	0x00000002
+#define EXPIRES_H "Expires: -1"
+#define SERVER_H "Server: KJAd"
 
 /* HTTP header flags per connection */
-#define CONNECTION_F	0x00000100
 #define CONTENTTYPE_F	0x00000200
 
 /* special flags */
@@ -102,10 +98,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MIME_TXT "text/plain; "
 
 /* character set */
-#define CHARSET "charset=utf-8\n"
-
-/* temporary headers until we implement the proper handlers */
-#define CONNECTION_H "Connection: close"
+#define CHARSET "charset=utf-8"
 
 typedef struct threadargs {
 	int conn_fd;
@@ -121,8 +114,8 @@ typedef struct reqargs {
 	char* method;
 	char* file;
 	char scratchbuff[BUFFSIZE];
-	char* http_ver;
 	char* mimetype;
+	char* http_ver;
 } reqargs_t;
 
 int log_level;

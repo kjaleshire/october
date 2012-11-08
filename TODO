@@ -8,14 +8,9 @@ Stuff yet TODO (in no particular order):
 	* Accept-Encoding: (again, debug only? not sure how to implement properly at this point)
 	* Accept-Language: (debug only)
 	* Accept-Charset: (debug only)
-* and also proper response header support:
-	* Connection: (only if we don't end up implementing keep-alive)
-	* Expires: (-1 for now, we don't want any browser-side caching to occur at this point)
-	* Server: (think of a good server name :) )
 * implement command line flags so we can pass in options
 * support for config file to put options like document root, listen address/port, logging level & log file location
 
-
 Future re-implementations:
 * reuse threads for new requests (related to Connection: keep-alive). perhaps spawn set number of worker threads and pass off connections so we're not wasting time setting up threads all the time
-* look into using libdispatch instead of threads to pass connections off to. libdispatch queues are much more lightweight than threads, however this would limit portability. idea: detect platform and use appropriate solution. or maybe we don't care since we're only running this on a Mac anyway :)
+* eventually look into using libdispatch instead of threads to pass connections off to. libdispatch queues are much more lightweight than threads, however this would limit portability. idea: detect platform and use appropriate solution. or maybe we don't care since we're only running this on a Mac anyway :)
