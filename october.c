@@ -30,19 +30,27 @@ int main(int argc, char *argv[]){
 	/* TODO implement command line parameter parser */
 
 	int v;
-	/* listening socket, sits on the main thread and doesn't move */
+
 	int listen_fd;
 	int listen_address;
+
 	struct sockaddr_in servaddr;
 	struct sockaddr_in* conn_info;
 	pthread_t thread_id;
 	socklen_t sockaddr_in_size;
 	threadargs_t* t_args;
 	pthread_attr_t attr;
+	pthread_mutexattr_t mtx_attr;
 
-	log_level = LOGINFO;
-
+	log_level = LOGDEBUG;
 	log_fd = stdout;
+
+	if( pthread_mutexattr_init(&mtx_attr) != 0 ||
+		pthread_mutexattr_settype(&mtx_attr, PTHREAD_MUTEX_RECURSIVE) != 0 ||
+		pthread_mutex_init(&mtx_term, &mtx_attr) != 0 ) {
+			printf("System error: unable to initialize terminal mutex");
+		exit(ERRSYS);
+	}
 
 	/* inet_pton(AF_INET, ADDRESS, &listen_address); */
 	listen_address = htonl(INADDR_ANY);
@@ -58,7 +66,7 @@ int main(int argc, char *argv[]){
 	   listen. this is only needed during testing so we can quickly restart
 	   the server without waiting for the port to close. */
 	v = 1;
-	if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &v, sizeof(int)) < 0) {
+	if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &v, sizeof(v)) < 0) {
 		october_panic(ERRSYS, "setsockopt() failed");
 	} else {
 		october_log(LOGINFO, "setsockopt() SO_REUSEADDR success");
@@ -101,8 +109,6 @@ int main(int argc, char *argv[]){
 		/* set up our thread argument structure. we need to pass the new connection descriptor and client address structure as well
 		   as create read and write buffers */
 		t_args = malloc(sizeof(threadargs_t));
-		t_args->readindex = 0;
-		t_args->writeindex = 0;
 
 		/* at the call to accept(), the main thread blocks until a client connects */
 		if( (t_args->conn_fd = accept(listen_fd, (struct sockaddr *) &(t_args->conn_info), &sockaddr_in_size)) < 0) {
@@ -120,113 +126,152 @@ int main(int argc, char *argv[]){
 
 /* worker thread main thread; to be called when spawned */
 void october_worker_thread(threadargs_t *t_args) {
-	int v; char *c; /* for miscellaneous values, only used very locally (usually in if(function()) idioms) */
-	int alt_index;
-	int file_fd;
+	int v; /* for miscellaneous values, only used very locally (usually in if(function()) idioms) */
 	reqargs_t request;
-	char *token, *linetoken;
-	time_t ticks;
+	char *token, *nexttoken, *line;
 
 	october_log(LOGINFO, "spawned to handle %s",  inet_ntoa(t_args->conn_info.sin_addr));
 
 	pthread_cleanup_push( (void (*) (void *)) october_worker_cleanup, t_args);
 
-	/* read the request into the request buffer. We call read() multiple times in case we don't get the
-	   whole request in one packet (who knows?) */
-	for(;;) {
-		if( (v = read( t_args->conn_fd, &(t_args->readbuff[t_args->readindex]), BUFFSIZE - t_args->readindex )) < 0) {
-			october_panic(THREADERRSYS, "connection request read error");
-		} else {
-			t_args->readindex += v;
-		}
-		if( v == 0 ) {
-			t_args->readbuff[t_args->readindex] = '\0';
-		} else if( strnstr(t_args->readbuff, "\r", t_args->readindex) != NULL ) {
-			t_args->readbuff[t_args->readindex] = '\0';
-			break;
-		}
-	} october_log(LOGDEBUG, "connection read %d bytes as request: %s", t_args->readindex + v, t_args->readbuff);
+	/* initialize our buffer indeces */
+	t_args->readindex = 0;
+	t_args->writeindex = 0;
 
-
-	/*strip out the carriage returns so we don't get weird terminal output */
-	*(strstr(t_args->readbuff, "\r")) = 0;
+	/* read the request into the request buffer. */
+	if ( (v = read( t_args->conn_fd, t_args->readbuff, BUFFSIZE - t_args->readindex )) < 0) {
+		october_panic(THREADERRSYS, "failed to read request");
+	} else {
+		t_args->readindex += v;
+		assert( (t_args->readindex + 1) <= BUFFSIZE );
+		t_args->readbuff[t_args->readindex] = '\0';
+		october_log(LOGDEBUG, "connection read %d bytes as request: %s", t_args->readindex, t_args->readbuff);
+	}
 
 	/* we have the request string, read the type of request into the request buffer now for comparison.
 	   For now only GET is supported, other types to come later. */
 	request.conn_flags = 0x00000000;
 
 	/* begin tokenizing the read buffer. */
-	linetoken = t_args->readbuff;
-	if((token = strsep(&linetoken, "\n")) == NULL || (request.method = strsep(&token, " ")) == NULL) {
+	line = t_args->readbuff;
+	october_log(LOGDEBUG, "request line: %s", t_args->readbuff);
+	if((nexttoken = strsep(&line, CRLF)) == NULL || (request.method = strsep(&nexttoken, " ")) == NULL) {
 		october_panic(THREADERRPROG, "no request received");
 	}
 
-	/* test for GET request and handle appropriately */
+	/* test for GET request */
 	if( strcmp(GET, request.method) == 0){
- 
-		if( (request.file = strsep(&token, " ")) == NULL) {
-			october_panic(THREADERRPROG, "no filename received");
+ 		request.conn_flags |= GET_F;
+
+		if( (request.file = strsep(&nexttoken, " ")) == NULL) {
+			october_log(THREADERRPROG, "no filename received, assuming \"/\"");
+			request.file = "/";
+
 		} else {
 			october_log(LOGDEBUG, "file %s requested", request.file);
-			request.conn_flags |= FILENAME_F;
 		}
 
-		if( (request.http_ver = strsep(&token, " ")) == NULL ) {
+		if( (request.http_ver = strsep(&nexttoken, " ")) == NULL ) {
 			october_log(LOGDEBUG, "no HTTP protocol requested, assuming HTTP/1.0");
+			request.http_ver = "HTTP/1.0";
 		} else {
 			october_log(LOGDEBUG, "HTTP protocol %s requested", request.http_ver);
-			request.conn_flags |= HTTPVERSION_F;
 		}
+	/* test for other request types */
+	} else if( strcmp(HEAD, request.method) == 0 ) {
+		request.conn_flags |= HEAD_F;
+	} else if( strcmp(OPTIONS, request.method) == 0 ) {
+		request.conn_flags |= OPTIONS_F;
+	} else if( strcmp(POST, request.method) == 0 ) {
+		request.conn_flags |= POST_F;
+	} else if( strcmp(PUT, request.method) == 0 ) {
+		request.conn_flags |= PUT_F;
+	}
 
-		c = request.file;
+	nexttoken = line;
+
+	october_log(LOGDEBUG, "next line: %s", nexttoken);
+
+	if((token = october_strsep(&line, CRLF)) == NULL || (token = strsep(&nexttoken, " ")) == NULL) {
+		october_log(LOGDEBUG, "no further headers received");
+	} else {
+		if( strcpy(token, HOST_H) == 0 ) {
+			october_log(LOGDEBUG, "%s header found", line);
+		} else if ( strcpy(token, CONNECTION_H) == 0 ) {
+			october_log(LOGDEBUG, "%s header found", line);
+		}
+	}
+
+	if(GET_F & request.conn_flags) {
+		october_get_handler(&request, t_args);
+	} else if ( request.conn_flags & OPTIONS_F ||
+				request.conn_flags & HEAD_F ||
+				request.conn_flags & POST_F ||
+				request.conn_flags & PUT_F ) {
+		october_log(LOGDEBUG, "application does not support POST, HEAD, OPTIONS or PUT");
+	} else {
+		october_panic(THREADERRPROG, "malformed request:\n%s", t_args->readbuff);
+	}
+
+	pthread_cleanup_pop(1);
+	pthread_exit(NULL);
+}
+
+void october_get_handler(reqargs_t *request, threadargs_t *t_args) {
+	int v; char *c;
+	int file_fd;
+	time_t ticks;
+
+	/* strip out encoded spaces, e.g. '%20' */
+		c = request->file;
 		while( (c = strchr(c, '%')) != NULL ) {
 			if( strncmp(c, "%20", 3) == 0) {
 				*c = ' ';
-				strcpy(request.scratchbuff, &(c[3]));
-				strcpy(&(c[1]), request.scratchbuff);
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
 				c = &(c[1]);
 			}
 			c = &(c[1]);
 		}
 
 		/* if the filename ends with '/', assume they're asking for the default file and append our default filename */
-		if( strcmp(&(request.file[strlen(request.file) - 1]), "/") == 0) {
-			snprintf(t_args->writebuff, BUFFSIZE, "%s%s%s", DOCROOT, request.file, DEFAULTFILE);
+		if( strcmp(&(request->file[strlen(request->file) - 1]), "/") == 0) {
+			snprintf(t_args->writebuff, BUFFSIZE, "%s%s%s", DOCROOT, request->file, DEFAULTFILE);
 		} else {
-			snprintf(t_args->writebuff, BUFFSIZE, "%s%s", DOCROOT, request.file);
-		} october_log(LOGDEBUG, "absolute path %s requested", t_args->writebuff);
+			snprintf(t_args->writebuff, BUFFSIZE, "%s%s", DOCROOT, request->file);
+		}
 
 		ticks = time(NULL);
 		assert(t_args->writeindex == 0);
 
 		october_log(LOGDEBUG, "detecting if file exists: %s", t_args->writebuff);
 		if( stat(t_args->writebuff, NULL) < 0 && errno == ENOENT ) {
-			october_log(LOGINFO, "404 file not found: %s", t_args->writebuff);
+			october_log(LOGINFO, "404 File not Found: %s", t_args->writebuff);
 
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", NOTFOUND);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s\n", CONTENT_T_H, MIME_HTML, CHARSET);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s\n", DATE_H, ctime(&ticks));
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", NOTFOUNDHTML);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUND_RESPONSE, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", CONTENT_T_H, MIME_HTML, CHARSET, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", DATE_H, ctime(&ticks), CRLF, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUNDHTML, CRLF);
 
 			assert(t_args->writeindex <= BUFFSIZE);
 		} else {
-			october_log(LOGINFO, "200 OK file found: %s", t_args->writebuff);
+			october_log(LOGINFO, "200 OK: %s", t_args->writebuff);
 			if( (file_fd = open(t_args->writebuff, O_RDONLY)) < 0 ){
 				october_panic(THREADERRSYS, "error opening file: %s", t_args->writebuff);
 			} else {
 				october_log(LOGDEBUG, "file opened: %s", t_args->writebuff);
 			}
-			request.mimetype = october_detect_type(t_args->writebuff);
+			request->mimetype = october_detect_type(t_args->writebuff);
 
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n", OK);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s\n", CONTENT_T_H, request.mimetype, CHARSET);
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%.24s\n", DATE_H, ctime(&ticks));
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s\n%s\n\n", EXPIRES_H, SERVER_H);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", OK_RESPONSE, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", CONTENT_T_H, request->mimetype, CHARSET, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%.24s%s", DATE_H, ctime(&ticks), CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s%s", EXPIRES_H, CRLF, SERVER_H, CRLF, CRLF);
 
 			assert(t_args->writeindex <= BUFFSIZE);
 
 			while( (v = read(file_fd, &(t_args->writebuff[t_args->writeindex]), BUFFSIZE - t_args->writeindex)) != 0 ) {
-				october_log(LOGDEBUG, "Read %d bytes from file descriptor", v);
+				october_log(LOGDEBUG, "read %d bytes from file descriptor", v);
 				if( v < 0 ) {
 					october_panic(THREADERRSYS, "worker thread read error");
 				} else {
@@ -242,27 +287,13 @@ void october_worker_thread(threadargs_t *t_args) {
 					}
 				}
 			} t_args->writeindex = 0;
-		}
+		} 
 
-		if( (v = write(t_args->conn_fd, t_args->writebuff, t_args->writeindex)) < 0 || (v += write(t_args->conn_fd, "\n\r", 2)) < 0) {
+		if( (v = write(t_args->conn_fd, t_args->writebuff, t_args->writeindex)) < 0 || (v += write(t_args->conn_fd, CRLF, 2)) < 0) {
 			october_panic(THREADERRSYS, "connection write error");
 		} else {
 			october_log(LOGDEBUG, "wrote %d bytes on connection socket", v);
 		}
-
-	/* test for other request types */
-	} else if ( ( strcmp(HEAD, request.method) == 0 ) ||
-				( strcmp(OPTIONS, request.method) == 0 ) ||
-				( strcmp(POST, request.method) == 0 ) ||
-				( strcmp(PUT, request.method) == 0 ) ) {
-				/* make sure this isn't a malformed request too */
-		october_panic(THREADERRPROG, "application does not support POST, HEAD, OPTIONS or PUT");
-	} else {
-		october_panic(THREADERRPROG, "malformed request:\n%s", t_args->readbuff);
-	}
-
-	pthread_cleanup_pop(1);
-	pthread_exit(NULL);
 }
 
 char* october_detect_type(char* filename) {
@@ -286,6 +317,19 @@ char* october_detect_type(char* filename) {
 	}
 }
 
+char* october_strsep(char** str, const char* delim) {
+	if( *str == NULL || *str == '\0') {
+		return NULL;
+	}
+	char *c = *str;
+	*str = strstr(*str, delim);
+
+	*str = '\0';
+	*str += sizeof(delim);
+
+	return c == NULL ? NULL : c;
+}
+
 void october_worker_cleanup(threadargs_t *t_args) {
 	if(close(t_args->conn_fd) < 0) {
 		october_panic(ERRSYS, "connection socket close error");
@@ -297,9 +341,12 @@ void october_worker_cleanup(threadargs_t *t_args) {
 }
 
 /* thread & process error handler */
-
 void october_panic(int error, const char* message, ...) {
-	if( error % 10 ? LOGPANIC : LOGERR <= log_level) {
+	if( (error % 10 ? LOGPANIC : LOGERR) <= log_level) {
+		if (pthread_mutex_lock(&mtx_term) != 0 ) {
+			printf("%u:\terror acquiring terminal mutex", (unsigned int) pthread_self());
+			exit(ERRSYS);
+		}
 		switch(error) {
 			case ERRPROG:
 			case THREADERRPROG:
@@ -312,11 +359,16 @@ void october_panic(int error, const char* message, ...) {
 			default:
 				;
 		}
+		printf("%u:\t", (unsigned int) pthread_self());
 		va_list arglist;
 		va_start(arglist, message);
 		vfprintf(log_fd, message, arglist);
 		printf("\n");
 		va_end(arglist);
+		if (pthread_mutex_unlock(&mtx_term) != 0 ) {
+			printf("%u:\terror releasing terminal mutex", (unsigned int) pthread_self());
+			exit(ERRSYS);
+		}
 	}
 	if(error % 10) {
 		exit(error);
@@ -328,12 +380,17 @@ void october_panic(int error, const char* message, ...) {
 /* log stuff */
 void october_log(int err_level, const char* message, ...) {
 	if(err_level <= log_level) {
-		char buff[BUFFSIZE];
-		snprintf(buff, BUFFSIZE, "%u:\t", (unsigned int) pthread_self());
+		if (pthread_mutex_lock(&mtx_term) != 0 ) {
+			october_panic(ERRSYS, "error acquiring terminal mutex");
+		}
+		printf("%u:\t", (unsigned int) pthread_self());
 		va_list arglist;
 		va_start(arglist, message);
-		vsprintf(&(buff[strlen(buff)]), message, arglist);
+		vfprintf(log_fd, message, arglist);
 		va_end(arglist);
-		printf("%s\n", buff);
+		printf("\n");
+		if (pthread_mutex_unlock(&mtx_term) != 0 ) {
+			october_panic(ERRSYS, "error releasing terminal mutex");
+		}
 	}
 }

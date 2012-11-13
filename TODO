@@ -1,16 +1,11 @@
 Stuff yet TODO (in no particular order):
 
 * implement proper HTTP header request support
-	* Host: (absolutely the most important one, I think this is required by HTTP 1.1, maybe 1.0)
+	* Host: (just parse and store, since we have no roadmap that includes virtual hosts)
 	* Connection: keep-alive (shouldn't be too difficult, will reuse current thread)
-	* User-Agent: (debug only, dunno what we'd really do with this)
-	* Accept: (MIMEtype)
-	* Accept-Encoding: (again, debug only? not sure how to implement properly at this point)
-	* Accept-Language: (debug only)
-	* Accept-Charset: (debug only)
 * implement command line flags so we can pass in options
 * support for config file to put options like document root, listen address/port, logging level & log file location
 
-Future re-implementations:
+Future 2.0 re-implementations:
 * reuse threads for new requests (related to Connection: keep-alive). perhaps spawn set number of worker threads and pass off connections so we're not wasting time setting up threads all the time
-* eventually look into using libdispatch instead of threads to pass connections off to. libdispatch queues are much more lightweight than threads, however this would limit portability. idea: detect platform and use appropriate solution. or maybe we don't care since we're only running this on a Mac anyway :)
+* eventually look into using libdispatch instead of threads to pass connections off to. libdispatch queues are much more lightweight than threads, however this would limit portability. or maybe we don't care since we're only running this on a Mac anyway :)

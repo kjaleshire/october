@@ -65,30 +65,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HEAD "HEAD"
 #define PUT "PUT"
 
-/* response types. HTTP 1.0 since we're not (yet) supporting a lot of HTTP 1.0 (specifically Connection: keep-alive) */
-#define OK "HTTP/1.0 200 OK"
-#define NOTFOUND "HTTP/1.0 404 Not Found"
-#define NOTFOUNDHTML "<html><body><p>Document not found, error 404</p></body></html>"
+/* response types. HTTP 1.0 since we're not (yet) supporting a lot of HTTP 1.1 (specifically Connection: keep-alive) */
+#define OK_RESPONSE "HTTP/1.0 200 OK"
+#define NOTFOUND_RESPONSE "HTTP/1.0 404 Not Found"
+#define NOTFOUNDHTML "<html><body><p>Error 404, resource not found.</p></body></html>"
 
 /* default filename */
 #define DEFAULTFILE "index.html"
 
-/* headers */
+/* response headers */
 #define DATE_H "Date: "
 #define CONTENT_T_H "Content-Type: "
 #define EXPIRES_H "Expires: -1"
 #define SERVER_H "Server: KJAd"
 
-/* HTTP header flags per connection */
-#define CONTENTTYPE_F	0x00000200
-
-/* special flags */
-#define HTTPVERSION_F 	0x01000000
-#define FILENAME_F		0x02000000
-#define HOSTHEADER_F	0x04000000
-#define DATEHEADER_F	0x08000000
-
-/* MIME types */
+/* MIME types... */
 #define MIME_HTML "text/html; "
 #define MIME_JPG "image/jpeg; "
 #define MIME_GIF "image/gif; "
@@ -97,8 +88,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MIME_JS "application/javascript; "
 #define MIME_TXT "text/plain; "
 
-/* character set */
+/* and character set */
 #define CHARSET "charset=utf-8"
+
+/* request headers for comparison */
+#define HOST_H "Host:"
+#define CONNECTION_H "Connection:"
+
+/* special flags */
+#define GET_F			0x00000001
+#define OPTIONS_F		0x00000002
+#define HEAD_F			0x00000004
+#define POST_F			0x00000008
+#define PUT_F			0x00000010
+
+#define HOST_F			0x00000100
+#define CONNECTION_F	0x00000200
+
+/* misc. defs */
+#define CRLF "\r\n"
 
 typedef struct threadargs {
 	int conn_fd;
@@ -111,18 +119,21 @@ typedef struct threadargs {
 
 typedef struct reqargs {
 	uint32_t conn_flags;
+	char scratchbuff[BUFFSIZE];
 	char* method;
 	char* file;
-	char scratchbuff[BUFFSIZE];
 	char* mimetype;
 	char* http_ver;
 } reqargs_t;
 
 int log_level;
 FILE* log_fd;
+pthread_mutex_t mtx_term;
 
-void october_worker_thread(threadargs_t* t_args);
+void october_worker_thread(threadargs_t*);
+void october_get_handler(reqargs_t*, threadargs_t*);
 char* october_detect_type(char*);
+char* october_strsep(char**, const char*);
 void october_worker_cleanup(threadargs_t* t_args);
 void october_panic(int error, const char* message, ...);
 void october_log(int err_level, const char* message, ...);
