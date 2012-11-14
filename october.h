@@ -119,6 +119,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 typedef struct threadargs {
 	int conn_fd;
 	struct sockaddr_in conn_info;
+	struct reqargs *request;
 	char readbuff[BUFFSIZE];
 	char writebuff[BUFFSIZE];
 	int readindex;

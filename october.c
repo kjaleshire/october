@@ -38,11 +38,13 @@ int main(int argc, char *argv[]){
 	pthread_t thread_id;
 	pthread_attr_t attr;
 	pthread_mutexattr_t mtx_attr;
-	threadargs_t* t_args;
+	threadargs_t *t_args;
+	reqargs_t *request;
 
 	log_level = LOGDEBUG;
 	log_fd = stdout;
 
+	/* initialize the terminal output mutex before we start logging stuff */
 	if( pthread_mutexattr_init(&mtx_attr) != 0 ||
 		pthread_mutexattr_settype(&mtx_attr, PTHREAD_MUTEX_RECURSIVE) != 0 ||
 		pthread_mutex_init(&mtx_term, &mtx_attr) != 0 ) {
@@ -71,7 +73,7 @@ int main(int argc, char *argv[]){
 	}
 
 	/* zero out the address structures for the listening and accepted sockets */
-	memset(&servaddr, 0, sizeof(servaddr));
+	/* memset(&servaddr, 0, sizeof(servaddr)); */
 
 	/* set the server listening parameters: IPv4, IP address, port number */
 	servaddr.sin_family = AF_INET;
@@ -99,14 +101,15 @@ int main(int argc, char *argv[]){
 		october_log(LOGDEBUG, "initialized thread attributes structure");
 	}
 
-	/* save the size of the sockaddr structure since we're going to use it a lot */
+	/* save the size of the sockaddr structure since we need it held in a variable */
 	v = sizeof(struct sockaddr_in);
 
-	/* enter our socket listen loop */
+	/* enter our socket listen/accept() loop */
 	for(;;) {
 		/* set up our thread argument structure. we need to pass the new connection descriptor and client address structure as well
 		   as create read and write buffers */
 		t_args = malloc(sizeof(threadargs_t));
+		t_args->request = malloc(sizeof(reqargs_t));
 
 		/* at the call to accept(), the main thread blocks until a client connects */
 		if( (t_args->conn_fd = accept(listen_fd, (struct sockaddr *) &(t_args->conn_info), (socklen_t*) &v)) < 0) {
@@ -122,9 +125,10 @@ int main(int argc, char *argv[]){
 	}
 }
 
-/* worker thread main thread; to be called when spawned */
+/* worker thread main thread; called by the accept() loop on new connection */
 void october_worker_thread(threadargs_t *t_args) {
-	reqargs_t request;
+	reqargs_t *request = t_args->request;
+	/* request tokenizer pointers */
 	char *token, *nexttoken, *line;
 
 	october_log(LOGINFO, "spawned to handle %s",  inet_ntoa(t_args->conn_info.sin_addr));
@@ -134,7 +138,7 @@ void october_worker_thread(threadargs_t *t_args) {
 	/* initialize our buffer indices & flags */
 	t_args->readindex = 0;
 	t_args->writeindex = 0;
-	request.conn_flags = 0x00000000;
+	request->conn_flags = 0x00000000;
 
 	/* read the request into the request buffer. */
 	if ( (t_args->readindex = read(t_args->conn_fd, t_args->readbuff, BUFFSIZE - t_args->readindex)) < 0) {
@@ -157,55 +161,55 @@ void october_worker_thread(threadargs_t *t_args) {
 
 	/* test for GET request */
 	if( strcmp(GET, token) == 0){
- 		request.conn_flags |= GET_F;
+ 		request->conn_flags |= GET_F;
 
-		if( (request.file = strsep(&nexttoken, " ")) == NULL) {
+		if( (request->file = strsep(&nexttoken, " ")) == NULL) {
 			october_log(THREADERRPROG, "no filename received, assuming \"/\"");
-			request.file = "/";
+			request->file = "/";
 		} else {
-			october_log(LOGDEBUG, "file %s requested", request.file);
+			october_log(LOGDEBUG, "file %s requested", request->file);
 		}
 
 		if( (token = strsep(&nexttoken, " ")) == NULL ) {
 			october_log(LOGDEBUG, "no protocol requested, assuming HTTP/1.0");
 		} else {
 			if( strcmp(HTTP11_H, token) == 0 ) {
-				request.conn_flags |= HTTP11_F;
+				request->conn_flags |= HTTP11_F;
 			}
 			october_log(LOGDEBUG, "protocol %s requested", token);
 		}
 	/* test for other request types */
 	} else if( strcmp(HEAD, token) == 0 ) {
-		request.conn_flags |= HEAD_F;
+		request->conn_flags |= HEAD_F;
 	} else if( strcmp(OPTIONS, token) == 0 ) {
-		request.conn_flags |= OPTIONS_F;
+		request->conn_flags |= OPTIONS_F;
 	} else if( strcmp(POST, token) == 0 ) {
-		request.conn_flags |= POST_F;
+		request->conn_flags |= POST_F;
 	} else if( strcmp(PUT, token) == 0 ) {
-		request.conn_flags |= PUT_F;
+		request->conn_flags |= PUT_F;
 	}
 
 	/* having tokenized the request method line, we can start pulling the headers we (may) need */
 	while( (nexttoken = strsep(&line, CRLF)) != NULL ) {
 		token = strsep(&nexttoken, " ");
 		if ( strcmp(HOST_H, token) == 0 ) {
-			request.conn_flags |= HOST_F;
+			request->conn_flags |= HOST_F;
 			october_log(LOGDEBUG, "Host header found: %s", strsep(&nexttoken, " "));
 		} else if ( strcmp(CONNECTION_H, token)  == 0 ) {
 			october_log(LOGDEBUG, "Connection header found");
-			if( strcmp(KEEPALIVE_H, strsep(&nexttoken, " ")) == 0 && (request.conn_flags | HTTP11_F) ) {
-				request.conn_flags |= CONNECTION_F;
+			if( strcmp(KEEPALIVE_H, strsep(&nexttoken, " ")) == 0 && (request->conn_flags | HTTP11_F) ) {
+				request->conn_flags |= CONNECTION_F;
 				october_log(LOGDEBUG, "keep-alive set");
 			}
 		}
 	}
 
-	if(GET_F & request.conn_flags) {
-		october_get_handler(&request, t_args);
-	} else if ( request.conn_flags & OPTIONS_F ||
-				request.conn_flags & HEAD_F ||
-				request.conn_flags & POST_F ||
-				request.conn_flags & PUT_F ) {
+	if(GET_F & request->conn_flags) {
+		october_get_handler(request, t_args);
+	} else if ( request->conn_flags & OPTIONS_F ||
+				request->conn_flags & HEAD_F ||
+				request->conn_flags & POST_F ||
+				request->conn_flags & PUT_F ) {
 		october_log(LOGDEBUG, "application does not support POST, HEAD, OPTIONS or PUT");
 	} else {
 		october_panic(THREADERRPROG, "malformed request method:\n%s", t_args->readbuff);
@@ -352,6 +356,7 @@ void october_worker_cleanup(threadargs_t *t_args) {
 		october_log(LOGINFO, "connection socket closed");
 	}
 
+	free(t_args->request);
 	free(t_args);
 }
 
