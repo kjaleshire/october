@@ -1,8 +1,7 @@
 Stuff yet TODO (in no particular order):
 
 * implement proper HTTP header request support
-	* Host: (just parse and store, since we have no roadmap that includes virtual hosts)
-	* Connection: keep-alive (shouldn't be too difficult, will reuse current thread)
+	* Connection: keep-alive (will reuse current thread)
 * implement command line flags so we can pass in options
 * support for config file to put options like document root, listen address/port, logging level & log file location
 

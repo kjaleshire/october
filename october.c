@@ -30,17 +30,15 @@ int main(int argc, char *argv[]){
 	/* TODO implement command line parameter parser */
 
 	int v;
-
 	int listen_fd;
 	int listen_address;
 
 	struct sockaddr_in servaddr;
-	struct sockaddr_in* conn_info;
+	
 	pthread_t thread_id;
-	socklen_t sockaddr_in_size;
-	threadargs_t* t_args;
 	pthread_attr_t attr;
 	pthread_mutexattr_t mtx_attr;
+	threadargs_t* t_args;
 
 	log_level = LOGDEBUG;
 	log_fd = stdout;
@@ -94,15 +92,15 @@ int main(int argc, char *argv[]){
 		october_log(LOGINFO, "socket set to listen on port %d", PORT);
 	}
 
-	/* save the size of the sockaddr structure since we're going to use it a lot */
-	sockaddr_in_size = (socklen_t) sizeof(struct sockaddr_in);
-
 	/* set up a thread attributes structure so we don't need an extra call to pthread_detach() */
 	if( pthread_attr_init(&attr) < 0 || pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) < 0) {
 		october_panic(ERRSYS, "error initializing thread attributes structure");
 	} else {
 		october_log(LOGDEBUG, "initialized thread attributes structure");
 	}
+
+	/* save the size of the sockaddr structure since we're going to use it a lot */
+	v = sizeof(struct sockaddr_in);
 
 	/* enter our socket listen loop */
 	for(;;) {
@@ -111,7 +109,7 @@ int main(int argc, char *argv[]){
 		t_args = malloc(sizeof(threadargs_t));
 
 		/* at the call to accept(), the main thread blocks until a client connects */
-		if( (t_args->conn_fd = accept(listen_fd, (struct sockaddr *) &(t_args->conn_info), &sockaddr_in_size)) < 0) {
+		if( (t_args->conn_fd = accept(listen_fd, (struct sockaddr *) &(t_args->conn_info), (socklen_t*) &v)) < 0) {
 			october_panic(ERRSYS, "connection accept failure from client %s", inet_ntoa(t_args->conn_info.sin_addr));
 		} else {
 			october_log(LOGINFO, "accepted connection from client %s", inet_ntoa(t_args->conn_info.sin_addr));
@@ -126,7 +124,6 @@ int main(int argc, char *argv[]){
 
 /* worker thread main thread; to be called when spawned */
 void october_worker_thread(threadargs_t *t_args) {
-	int v; /* for miscellaneous values, only used very locally (usually in if(function()) idioms) */
 	reqargs_t request;
 	char *token, *nexttoken, *line;
 
@@ -134,71 +131,73 @@ void october_worker_thread(threadargs_t *t_args) {
 
 	pthread_cleanup_push( (void (*) (void *)) october_worker_cleanup, t_args);
 
-	/* initialize our buffer indeces */
+	/* initialize our buffer indices & flags */
 	t_args->readindex = 0;
 	t_args->writeindex = 0;
+	request.conn_flags = 0x00000000;
 
 	/* read the request into the request buffer. */
-	if ( (v = read( t_args->conn_fd, t_args->readbuff, BUFFSIZE - t_args->readindex )) < 0) {
+	if ( (t_args->readindex = read(t_args->conn_fd, t_args->readbuff, BUFFSIZE - t_args->readindex)) < 0) {
 		october_panic(THREADERRSYS, "failed to read request");
 	} else {
-		t_args->readindex += v;
-		assert( (t_args->readindex + 1) <= BUFFSIZE );
+		assert( t_args->readindex <= BUFFSIZE );
 		t_args->readbuff[t_args->readindex] = '\0';
 		october_log(LOGDEBUG, "connection read %d bytes as request: %s", t_args->readindex, t_args->readbuff);
 	}
 
 	/* we have the request string, read the type of request into the request buffer now for comparison.
 	   For now only GET is supported, other types to come later. */
-	request.conn_flags = 0x00000000;
 
 	/* begin tokenizing the read buffer. */
 	line = t_args->readbuff;
-	october_log(LOGDEBUG, "request line: %s", t_args->readbuff);
-	if((nexttoken = strsep(&line, CRLF)) == NULL || (request.method = strsep(&nexttoken, " ")) == NULL) {
+
+	if((nexttoken = strsep(&line, "\r")) == NULL || (token = strsep(&nexttoken, " ")) == NULL) {
 		october_panic(THREADERRPROG, "no request received");
 	}
 
 	/* test for GET request */
-	if( strcmp(GET, request.method) == 0){
+	if( strcmp(GET, token) == 0){
  		request.conn_flags |= GET_F;
 
 		if( (request.file = strsep(&nexttoken, " ")) == NULL) {
 			october_log(THREADERRPROG, "no filename received, assuming \"/\"");
 			request.file = "/";
-
 		} else {
 			october_log(LOGDEBUG, "file %s requested", request.file);
 		}
 
-		if( (request.http_ver = strsep(&nexttoken, " ")) == NULL ) {
+		if( (token = strsep(&nexttoken, " ")) == NULL ) {
 			october_log(LOGDEBUG, "no HTTP protocol requested, assuming HTTP/1.0");
-			request.http_ver = "HTTP/1.0";
 		} else {
-			october_log(LOGDEBUG, "HTTP protocol %s requested", request.http_ver);
+			if( strcmp(HTTP11_H, token) == 0 ) {
+				request.conn_flags |= HTTP11_F;
+			}
+			october_log(LOGDEBUG, "HTTP protocol %s requested", token);
 		}
 	/* test for other request types */
-	} else if( strcmp(HEAD, request.method) == 0 ) {
+	} else if( strcmp(HEAD, token) == 0 ) {
 		request.conn_flags |= HEAD_F;
-	} else if( strcmp(OPTIONS, request.method) == 0 ) {
+	} else if( strcmp(OPTIONS, token) == 0 ) {
 		request.conn_flags |= OPTIONS_F;
-	} else if( strcmp(POST, request.method) == 0 ) {
+	} else if( strcmp(POST, token) == 0 ) {
 		request.conn_flags |= POST_F;
-	} else if( strcmp(PUT, request.method) == 0 ) {
+	} else if( strcmp(PUT, token) == 0 ) {
 		request.conn_flags |= PUT_F;
 	}
 
-	nexttoken = line;
-
-	october_log(LOGDEBUG, "next line: %s", nexttoken);
-
-	if((token = october_strsep(&line, CRLF)) == NULL || (token = strsep(&nexttoken, " ")) == NULL) {
-		october_log(LOGDEBUG, "no further headers received");
-	} else {
-		if( strcpy(token, HOST_H) == 0 ) {
-			october_log(LOGDEBUG, "%s header found", line);
-		} else if ( strcpy(token, CONNECTION_H) == 0 ) {
-			october_log(LOGDEBUG, "%s header found", line);
+	/* having tokenized the request method line, we can start pulling the headers we (may) need */
+	while( (nexttoken = strsep(&line, "\r")) != NULL ) {
+		token = strsep(&nexttoken, " ");
+		if ( strcmp(HOST_H, token) == 0 ) {
+			request.conn_flags |= HOST_F;
+			request.host = strsep(&nexttoken, " ");
+			october_log(LOGDEBUG, "Host header found: %s", request.host);
+		} else if ( strcmp(CONNECTION_H, token)  == 0 ) {
+			october_log(LOGDEBUG, "Connection header found");
+			if( strcmp(KEEPALIVE_H, strsep(&nexttoken, " ")) == 0 && (request.conn_flags | HTTP11_F) ) {
+				request.conn_flags |= CONNECTION_F;
+				october_log(LOGDEBUG, "keep-alive set");
+			}
 		}
 	}
 
@@ -210,7 +209,7 @@ void october_worker_thread(threadargs_t *t_args) {
 				request.conn_flags & PUT_F ) {
 		october_log(LOGDEBUG, "application does not support POST, HEAD, OPTIONS or PUT");
 	} else {
-		october_panic(THREADERRPROG, "malformed request:\n%s", t_args->readbuff);
+		october_panic(THREADERRPROG, "malformed request method:\n%s", t_args->readbuff);
 	}
 
 	pthread_cleanup_pop(1);
@@ -230,7 +229,33 @@ void october_get_handler(reqargs_t *request, threadargs_t *t_args) {
 				strcpy(request->scratchbuff, &(c[3]));
 				strcpy(&(c[1]), request->scratchbuff);
 				c = &(c[1]);
+			} else if ( strncmp(c, "%34", 3) == 0) {
+				*c = '"';
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
+				c = &(c[1]);
+			} else if ( strncmp(c, "%60", 3) == 0) {
+				*c = '<';
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
+				c = &(c[1]);
+			} else if ( strncmp(c, "%62", 3) == 0) {
+				*c = '>';
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
+				c = &(c[1]);
+			} else if ( strncmp(c, "%35", 3) == 0) {
+				*c = '#';
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
+				c = &(c[1]);
+			} else if ( strncmp(c, "%37", 3) == 0) {
+				*c = '%';
+				strcpy(request->scratchbuff, &(c[3]));
+				strcpy(&(c[1]), request->scratchbuff);
+				c = &(c[1]);
 			}
+
 			c = &(c[1]);
 		}
 
@@ -248,7 +273,8 @@ void october_get_handler(reqargs_t *request, threadargs_t *t_args) {
 		if( stat(t_args->writebuff, NULL) < 0 && errno == ENOENT ) {
 			october_log(LOGINFO, "404 File not Found: %s", t_args->writebuff);
 
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUND_RESPONSE, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s ", request->conn_flags | HTTP11_F ? HTTP11_H : HTTP10_H);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUND_R, CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", CONTENT_T_H, MIME_HTML, CHARSET, CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", DATE_H, ctime(&ticks), CRLF, CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", NOTFOUNDHTML, CRLF);
@@ -263,7 +289,8 @@ void october_get_handler(reqargs_t *request, threadargs_t *t_args) {
 			}
 			request->mimetype = october_detect_type(t_args->writebuff);
 
-			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", OK_RESPONSE, CRLF);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s ", request->conn_flags | HTTP11_F ? HTTP11_H : HTTP10_H);
+			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s", OK_R, CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s", CONTENT_T_H, request->mimetype, CHARSET, CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%.24s%s", DATE_H, ctime(&ticks), CRLF);
 			t_args->writeindex += snprintf(&(t_args->writebuff[t_args->writeindex]), BUFFSIZE, "%s%s%s%s%s", EXPIRES_H, CRLF, SERVER_H, CRLF, CRLF);
@@ -299,35 +326,24 @@ void october_get_handler(reqargs_t *request, threadargs_t *t_args) {
 char* october_detect_type(char* filename) {
 	char *c;
 	if( (c = strrchr(filename, '.')) == NULL || strcmp(c, ".txt") == 0 ) {
-		return MIME_TXT;
+		c = MIME_TXT;
 	} else if( strcmp(c, ".html") == 0 || strcmp(c, ".htm") == 0) {
-		return MIME_HTML;
+		c = MIME_HTML;
 	} else if( strcmp(c, ".jpeg") == 0 || strcmp(c, ".jpg") == 0) {
-		return MIME_JPG;
+		c = MIME_JPG;
 	} else if( strcmp(c, ".gif") == 0 ) {
-		return MIME_GIF;
+		c = MIME_GIF;
 	} else if( strcmp(c, ".png") == 0 ) {
-		return MIME_PNG;
+		c = MIME_PNG;
 	} else if( strcmp(c, ".css") == 0 ) {
-		return MIME_CSS;
+		c = MIME_CSS;
 	} else if( strcmp(c, ".js") == 0 ) {
-		return MIME_JS;
+		c = MIME_JS;
 	} else {
-		return MIME_TXT;
+		c = MIME_TXT;
 	}
-}
-
-char* october_strsep(char** str, const char* delim) {
-	if( *str == NULL || *str == '\0') {
-		return NULL;
-	}
-	char *c = *str;
-	*str = strstr(*str, delim);
-
-	*str = '\0';
-	*str += sizeof(delim);
-
-	return c == NULL ? NULL : c;
+	october_log(LOGDEBUG, "detected MIME type: %s", c);
+	return c;
 }
 
 void october_worker_cleanup(threadargs_t *t_args) {

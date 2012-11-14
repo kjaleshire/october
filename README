@@ -4,7 +4,7 @@ A simple threaded HTTP daemon written mainly for self-educational purposes.
 
 Only supports GET requests. A request is serviced FIFO by a spawned handler thread which exits on completion.
 
-Never guaranteed not to be buggy as hell. See TODO file for a list of planned modifications.
+Potentially buggy as hell any given build. See TODO file for a list of planned modifications.
 
 Build:
 

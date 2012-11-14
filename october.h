@@ -41,59 +41,64 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assert.h>
 #include <time.h>
 
-#define BUFFSIZE 1024
-#define LISTENQ 1024
-#define DOCROOT "site"
+#define BUFFSIZE		1024
+#define LISTENQ			1024
+#define DOCROOT			"site"
 
 /* error types */
-#define ERRPROG -1
-#define ERRSYS -2
-#define THREADERRPROG -10
-#define THREADERRSYS -20
+#define ERRPROG			-1
+#define ERRSYS			-2
+#define THREADERRPROG	-10
+#define THREADERRSYS	-20
 
 /* logging levels */
-#define LOGNONE 0
-#define LOGPANIC 1
-#define LOGERR 2
-#define LOGINFO 3
-#define LOGDEBUG 4
+#define LOGNONE			0
+#define LOGPANIC		1
+#define LOGERR			2
+#define LOGINFO			3
+#define LOGDEBUG		4
 
 /* request types */
-#define GET "GET"
-#define POST "POST"
-#define OPTIONS "OPTIONS"
-#define HEAD "HEAD"
-#define PUT "PUT"
+#define GET				"GET"
+#define POST			"POST"
+#define OPTIONS			"OPTIONS"
+#define HEAD			"HEAD"
+#define PUT				"PUT"
 
 /* response types. HTTP 1.0 since we're not (yet) supporting a lot of HTTP 1.1 (specifically Connection: keep-alive) */
-#define OK_RESPONSE "HTTP/1.0 200 OK"
-#define NOTFOUND_RESPONSE "HTTP/1.0 404 Not Found"
-#define NOTFOUNDHTML "<html><body><p>Error 404, resource not found.</p></body></html>"
+#define OK_R			"200 OK"
+#define NOTFOUND_R		"404 Not Found"
+#define NOTFOUNDHTML	"<html><body><p>Error 404, resource not found.</p></body></html>"
 
 /* default filename */
-#define DEFAULTFILE "index.html"
+#define DEFAULTFILE		"index.html"
 
 /* response headers */
-#define DATE_H "Date: "
-#define CONTENT_T_H "Content-Type: "
-#define EXPIRES_H "Expires: -1"
-#define SERVER_H "Server: KJAd"
+#define DATE_H			"Date: "
+#define CONTENT_T_H		"Content-Type: "
+#define EXPIRES_H		"Expires: -1"
+#define SERVER_H		"Server: KJAd"
 
 /* MIME types... */
-#define MIME_HTML "text/html; "
-#define MIME_JPG "image/jpeg; "
-#define MIME_GIF "image/gif; "
-#define MIME_PNG "image/png; "
-#define MIME_CSS "text/css; "
-#define MIME_JS "application/javascript; "
-#define MIME_TXT "text/plain; "
+#define MIME_HTML		"text/html; "
+#define MIME_JPG		"image/jpeg; "
+#define MIME_GIF		"image/gif; "
+#define MIME_PNG		"image/png; "
+#define MIME_CSS		"text/css; "
+#define MIME_JS			"application/javascript; "
+#define MIME_TXT		"text/plain; "
 
 /* and character set */
-#define CHARSET "charset=utf-8"
+#define CHARSET			"charset=utf-8"
 
 /* request headers for comparison */
-#define HOST_H "Host:"
-#define CONNECTION_H "Connection:"
+#define HOST_H			"Host:"
+#define CONNECTION_H	"Connection:"
+
+/* header values */
+#define KEEPALIVE_H		"keep-alive"
+#define HTTP11_H		"HTTP/1.1"
+#define HTTP10_H		"HTTP/1.0"
 
 /* special flags */
 #define GET_F			0x00000001
@@ -102,8 +107,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define POST_F			0x00000008
 #define PUT_F			0x00000010
 
+#define HTTP11_F		0x00000080
+
 #define HOST_F			0x00000100
 #define CONNECTION_F	0x00000200
+
 
 /* misc. defs */
 #define CRLF "\r\n"
@@ -120,10 +128,9 @@ typedef struct threadargs {
 typedef struct reqargs {
 	uint32_t conn_flags;
 	char scratchbuff[BUFFSIZE];
-	char* method;
 	char* file;
 	char* mimetype;
-	char* http_ver;
+	char* host;
 } reqargs_t;
 
 int log_level;
@@ -133,7 +140,6 @@ pthread_mutex_t mtx_term;
 void october_worker_thread(threadargs_t*);
 void october_get_handler(reqargs_t*, threadargs_t*);
 char* october_detect_type(char*);
-char* october_strsep(char**, const char*);
 void october_worker_cleanup(threadargs_t* t_args);
 void october_panic(int error, const char* message, ...);
 void october_log(int err_level, const char* message, ...);
