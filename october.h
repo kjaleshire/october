@@ -130,7 +130,6 @@ typedef struct reqargs {
 	char scratchbuff[BUFFSIZE];
 	char* file;
 	char* mimetype;
-	char* host;
 } reqargs_t;
 
 int log_level;

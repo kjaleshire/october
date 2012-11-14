@@ -167,12 +167,12 @@ void october_worker_thread(threadargs_t *t_args) {
 		}
 
 		if( (token = strsep(&nexttoken, " ")) == NULL ) {
-			october_log(LOGDEBUG, "no HTTP protocol requested, assuming HTTP/1.0");
+			october_log(LOGDEBUG, "no protocol requested, assuming HTTP/1.0");
 		} else {
 			if( strcmp(HTTP11_H, token) == 0 ) {
 				request.conn_flags |= HTTP11_F;
 			}
-			october_log(LOGDEBUG, "HTTP protocol %s requested", token);
+			october_log(LOGDEBUG, "protocol %s requested", token);
 		}
 	/* test for other request types */
 	} else if( strcmp(HEAD, token) == 0 ) {
@@ -186,12 +186,11 @@ void october_worker_thread(threadargs_t *t_args) {
 	}
 
 	/* having tokenized the request method line, we can start pulling the headers we (may) need */
-	while( (nexttoken = strsep(&line, "\r")) != NULL ) {
+	while( (nexttoken = strsep(&line, CRLF)) != NULL ) {
 		token = strsep(&nexttoken, " ");
 		if ( strcmp(HOST_H, token) == 0 ) {
 			request.conn_flags |= HOST_F;
-			request.host = strsep(&nexttoken, " ");
-			october_log(LOGDEBUG, "Host header found: %s", request.host);
+			october_log(LOGDEBUG, "Host header found: %s", strsep(&nexttoken, " "));
 		} else if ( strcmp(CONNECTION_H, token)  == 0 ) {
 			october_log(LOGDEBUG, "Connection header found");
 			if( strcmp(KEEPALIVE_H, strsep(&nexttoken, " ")) == 0 && (request.conn_flags | HTTP11_F) ) {
