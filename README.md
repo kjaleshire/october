@@ -1,17 +1,15 @@
 Project October
 
-A simple threaded HTTP daemon written mainly for self-educational purposes.
+A threaded HTTP daemon written mainly for self-educational purposes.
 
 Only supports GET requests. A request is serviced FIFO by a spawned handler thread which exits on completion.
 
-Potentially buggy as hell any given build. See TODO file for a list of planned modifications.
+Very much alpha until otherwise indicated.
 
-Build:
+Build (inside 'october' directory):
 
-$ cc -o october october.c
+$ make
 $ sudo ./october
-
-(root is the only way to bind a UNIX C program to a well-known port in OS X)
 
 (c) 2012 Kyle J Aleshire
 All rights reserved

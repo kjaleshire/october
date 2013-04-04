@@ -101,16 +101,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HTTP10_H		"HTTP/1.0"
 
 /* special flags */
-#define GET_F			0x00000001
-#define OPTIONS_F		0x00000002
-#define HEAD_F			0x00000004
-#define POST_F			0x00000008
-#define PUT_F			0x00000010
+#define GET_F			1 << 0
+#define OPTIONS_F		1 << 1
+#define HEAD_F			1 << 2
+#define POST_F			1 << 3
+#define PUT_F			1 << 4
 
-#define HTTP11_F		0x00000080
+#define HTTP11_F		1 << 5
 
-#define HOST_F			0x00000100
-#define CONNECTION_F	0x00000200
+#define HOST_F			1 << 6
+#define CONNECTION_F	1 << 7
 
 
 /* misc. defs */
@@ -137,11 +137,11 @@ int log_level;
 FILE* log_fd;
 pthread_mutex_t mtx_term;
 
-void october_worker_thread(threadargs_t*);
-void october_get_handler(reqargs_t*, threadargs_t*);
-char* october_detect_type(char*);
-void october_worker_cleanup(threadargs_t* t_args);
-void october_panic(int error, const char* message, ...);
-void october_log(int err_level, const char* message, ...);
+void oct_worker_thread(threadargs_t*);
+void oct_get_handler(reqargs_t*, threadargs_t*);
+char* oct_detect_type(char*);
+void oct_worker_cleanup(threadargs_t* t_args);
+void oct_panic(int error, const char* message, ...);
+void oct_log(int err_level, const char* message, ...);
 
 #endif /* __october_h */

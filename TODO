@@ -1,9 +1,0 @@
-Stuff yet TODO (in no particular order):
-
-* Implement persistent connection support ("Connection: keep-alive", will reuse current thread)
-* implement command line flags so we can pass in options
-* support for config file to put options like document root, listen address/port, logging level & log file location
-
-Future 2.0 re-implementations:
-* reuse threads for new requests. Perhaps spawn set number of worker threads and pass off connections so we're not wasting time setting up threads.
-* eventually look into using libdispatch instead of threads to pass connections off to. GCD queues are much more lightweight than threads, however this would limit portability. or maybe we don't care since we're only running this on a Mac anyway :)
