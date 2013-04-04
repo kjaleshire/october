@@ -8,8 +8,8 @@ Very much alpha until otherwise indicated.
 
 Build (inside 'october' directory):
 
-$ make
-$ sudo ./october
+    $ make
+    $ sudo ./october
 
 (c) 2012 Kyle J Aleshire
 All rights reserved
