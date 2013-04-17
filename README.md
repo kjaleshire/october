@@ -1,4 +1,4 @@
-Midnight - A simple & fast threaded HTTP daemon
+October - A simple & fast threaded HTTP daemon
 
 Only supports GET requests, handled by a worker thread pool.
 
