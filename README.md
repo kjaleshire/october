@@ -1,8 +1,8 @@
-October - A simple & fast threaded HTTP daemon
+October - A simple threaded HTTP daemon written as an excercise project
 
-Only supports GET requests, handled by a worker thread pool.
+Only supports GET requests, each handled by a newly spawned thread.
 
-Very much alpha until otherwise indicated.
+Very alpha: no warranty, no guarantee of correctness, bugginess or security.
 
 Build (inside 'october' directory):
 
